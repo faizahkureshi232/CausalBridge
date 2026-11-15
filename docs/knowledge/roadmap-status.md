@@ -1,49 +1,46 @@
-# Roadmap: completed work versus remaining research
+# Roadmap status: pilot scope
 
-Snapshot: merged main through PR #6, plus the ten-group Track A pilot.
-Sources: [detailed roadmap](../planning/Detailed_Implementation_Roadmap.pdf),
-[working plan](../kris-track-b-plan.md), and the evidence-linked knowledge bank.
-This is a capability/status map, not a percentage-complete claim. Passing synthetic
-integration is distinct from completing the planned real-data experiment.
+Snapshot: main `1dd84b4` (PRs #1–#8), plus local `codex/pilot-readiness` changes.
+Current user scope is preparation through the pilot, not held-out evaluation or
+the final report. [Pilot commands and limitations](../pilot_run.md) are current;
+older phase notes retain their historical validation counts.
 
-| Roadmap package | Owner | Evidence-backed status | Remaining |
-| --- | --- | --- | --- |
-| G1/G2 structural DAG utilities and backdoor checks | Arunima | Implemented and tested; used in the ten-group pilot | Live-case review / report |
-| G3 exact insufficiency witness | Arunima + Anish | Same observed joint, opposite effects implemented; independent rational/engine confirmation extended to the ten-group pilot | Human review of new cases; live Track A run / report |
-| N1 numerical intervention engine | Anish | Production engine merged; hand cases, reference comparisons and pilot confirmation tested | Use in final benchmark execution |
-| N2 ANM diagnostic | Anish | Actual KRR/HSIC, pre-saved requests and error/ambiguity controls implemented; our native integration tested | Development threshold choice/freeze; real-data evaluation |
-| D1 data audit/loader/source groups/splits | Faizah | No completed handoff observed in repo or shared planning folder | Audited snapshot, eligibility/exclusions, approved names, source-group splits, runtime/evaluator mapping |
-| D2 E1–E4 evidence packages | Kris | Implemented and tested; matched rows/context, sampling, summaries and bindings | Exercise real loader output; review sanitized labels/units |
-| V1 reusable predictor/adapter | Vaishak + Kris | Native single-call predictor integrated with our storage and prompts on synthetic data | Pinned live-model smoke |
-| V2 process checker | Vaishak + Kris | Actual binding/typed-claim checker integrated; qualified disagreement and false attribution controls tested | Real-output error analysis; separate explanation audit if applicable |
-| R1 S0/S1 execution and cached S2 | Kris | Durable attempts/raw replies, failures, resume/retries, model-free S2 and exports implemented/tested | Real-data/model execution under frozen protocol |
-| Minimal baselines | Kris + Anish; scoring by Faizah | Simple-gate and ANM-only execution projections implemented | Faizah scorer-consumer acceptance and measured comparisons |
-| E1 weighted metrics and group bootstrap | Faizah | Export boundary ready; actual scorer not observed | Hand-scored consumer fixture, weighted outcomes, paired source-group intervals |
-| ALL pilot/held-out/report | Team | Software/synthetic handshake evidence available | Real 15–20-pair pilot if eligible; freeze; held-out execution; figures/error cases; final report/presentation |
+**Live pilot update, 14 November 2026:** `runs/real-pilot-01/` completed 136 live
+generations and 68 S2 checks over 17 pairs/seven source groups. No execution or ANM
+errors; audit passed; resume made zero new calls. E4 S1/S2/ANM-only have identical
+arrows, 89.0% weighted coverage and 40.0% weighted selective accuracy. The
+before/during-pilot entries below describe the preparation checklist; the first
+run is now complete. No held-out run or final report has been produced.
 
-## Kris's phase status
+| Package | Current evidence | Before/during pilot |
+| --- | --- | --- |
+| G1/G2/G3 and N1 | Graph tools, independent exact witnesses, production numerical engine; 50 cases over ten groups | Live Track A execution if included in this pilot |
+| N2 | Real KRR/HSIC with durable original requests; all 17 selected real pairs compute successfully offline | Inspect diagnostic behavior; 0.001 threshold is exploratory, not calibrated |
+| D1 | Frozen official snapshot; 17 selected pairs in seven source groups; strict loader, hashes, exclusions, separate evaluator records | Review cohort caveats while interpreting pilot; reserved pairs are not eligibility-audited |
+| D2 | Matched E1–E4; runner now rejects changed context/source before calls; independent audit checks matching | Inspect actual live prompt lengths and failures |
+| V1/V2 | Native predictor/checker and compact prompts; earlier live synthetic smoke documented | Live real-data calls; inspect typed-claim and empty-claim outcomes |
+| R1 | Durable S0/S1, cached zero-call S2, resume, model pin and bounded pilot entry point | Run 136 live generations; inspect raw outputs and usage |
+| Baselines/scoring | ANM-only and simple-gate exports; weighted pilot coverage/yields/accuracy with complete denominators | Explicit post-run label join; inspect failures and incorrect/correct releases removed |
+| Intervals/held-out/report | Deferred by user | No pilot significance claims or final report |
 
-- Phase 0: scope/design defined.
-- Phase 1: contracts, selection, matched packages and exact prompts implemented/tested.
-- Phase 2: durable runner, cache/resume and S2 replay implemented/tested.
-- Phase 3: separate artifact auditing and adversarial controls implemented/tested.
-- Phase 4: available ANM/predictor/checker integration and provisional baseline/analysis
-  handoffs implemented/tested; real loader/scorer acceptance still open.
-- Phases 5–6: no live pilot, protocol freeze or held-out research run performed here.
+The official data are prepared locally under ignored `runs/pilot-preparation/`.
+All 108 metadata entries are accounted for: 17 included and 91 explicitly
+reserved/excluded from this pilot. All related source-family entries remain in
+the pilot partition even when only a subset is selected. No development/test
+allocation or held-out eligibility is asserted.
 
-## Scale and scientific claims
+The full-cohort offline check uses real observations and real ANM, but scripted
+model replies. Its 136 fixture calls and 68 S2 checks establish integration only.
+The subsequent live real-data pilot is recorded in the update above and pilot guide.
 
-Track A now has 50 validated synthetic questions over ten graph groups. The
-original seven-case set remains a development artifact. Track B's three synthetic integration
-cases are not the planned 15–20 eligible observational pairs. H1 (names), H2
-(method evidence) and H3 (checking) have experimental plumbing but no measured
-real-model results yet. No positive/negative research conclusion is claimed.
+## Deferred work
 
-## Current validation evidence
+- Development-calibrated ANM threshold and final held-out protocol freeze.
+- Source-group paired bootstrap intervals and inferential comparisons.
+- Auditing eligibility of reserved data and choosing development/test splits.
+- Full research error analysis, publication figures, report and presentation.
+- Optional robustness work or a new minimum-citation checker policy.
 
-502 combined tests pass; lint/format, reference and production-engine demos,
-Anish's real synthetic ANM handshake, and wheel/sdist builds pass. Our final native
-three-case handshake saves 24 model-fixture replies and 12 S2 checks, resumes with
-zero additional model calls, exports 51 analysis rows and passes its read-only audit.
-LLM replies are scripted; ANM computation is real. These facts establish tested
-software behavior, not causal-direction accuracy or checker benefit on real data.
+The current checker validates supplied typed claims and bindings; it permits
+empty claims and qualified disagreement with ANM. A process pass does not prove
+causal correctness or completeness of evidence support.

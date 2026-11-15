@@ -4,6 +4,12 @@ Start here when resuming work. This is an evidence-linked progress record, not a
 claim that roadmap assignments have been completed. Update it alongside each
 implementation milestone; fetch remote progress before marking teammates' work.
 
+**Current pilot-only update:** main `1dd84b4` plus local pilot-readiness changes
+supersedes the historical inventory below. The strict loader, 17-pair/seven-group
+official-data cohort, native pilot entry point and weighted pilot scorer are now
+implemented locally. See [current status](roadmap-status.md) and
+[pilot guide](../pilot_run.md). Held-out evaluation and the final report are deferred.
+
 ## Research and system context
 
 Two tracks: Track A checks support for causal effects with a supplied DAG and exact

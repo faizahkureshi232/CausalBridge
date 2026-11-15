@@ -130,6 +130,21 @@ S2 and the simple gate reuse the saved S1 proposals. Review the accompanying
 claim findings/reason codes and original versus suppressed releases; aggregate
 accuracy alone is not evidence that checking helps.
 
+## Diagnose the saved run
+
+Do this before another live run. It joins the same files, adds the unweighted
+rates, the E1–E4 contrasts, checker removals, source groups and a margin curve.
+It does not call the model or choose a new threshold.
+
+```bash
+uv run --extra anm python -m causalbridge.evaluation.diagnosis \
+  --analysis runs/real-pilot-01/analysis.jsonl \
+  --evaluator runs/pilot-preparation/prepared/evaluator/records.json \
+  --mapping runs/real-pilot-01/evaluation_mapping.json \
+  --anm-root runs/real-pilot-01/anm \
+  --output runs/real-pilot-01/diagnosis.json
+```
+
 ## Pilot limitations and deferred work
 
 Threshold 0.001 is an exploratory pilot setting, not a calibrated causal cutoff.

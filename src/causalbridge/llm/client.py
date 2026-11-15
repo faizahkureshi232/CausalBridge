@@ -1,7 +1,7 @@
 """Bounded structured-generation interface; no automatic downloads or retries."""
 
 from time import perf_counter
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
 from pydantic import Field
@@ -25,6 +25,17 @@ class Generation(Record):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     latency_seconds: float = Field(default=0, ge=0)
+    status: Literal["complete", "truncated", "incomplete"] = "complete"
+    failure_reason: str | None = None
+    raw_response: str | None = None
+
+
+class GenerationFailure(ValueError):
+    """A response exists, but its generation must never enter the prediction parser."""
+
+    def __init__(self, generation: Generation):
+        self.generation = generation
+        super().__init__(generation.failure_reason or "incomplete_generation")
 
 
 class JSONModel(Protocol):
@@ -59,15 +70,24 @@ class OllamaModel:
             response = self.client.post(url, json=payload, timeout=config.timeout_seconds)
         response.raise_for_status()
         body = response.json()
-        if body.get("done") is not True or body.get("done_reason") == "length":
-            raise ValueError("Model response incomplete or generation budget exhausted")
         content = body.get("message", {}).get("content")
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError("Model response has no textual JSON content")
-        return Generation(
-            text=content,
+        status, reason = "complete", None
+        if body.get("done_reason") == "length":
+            status, reason = "truncated", "output_token_limit"
+        elif body.get("done") is not True:
+            status, reason = "incomplete", "response_not_done"
+        elif not isinstance(content, str) or not content.strip():
+            status, reason = "incomplete", "missing_text_content"
+        generation = Generation(
+            text=content if isinstance(content, str) else "",
             model=body.get("model", config.model),
             input_tokens=body.get("prompt_eval_count"),
             output_tokens=body.get("eval_count"),
             latency_seconds=perf_counter() - started,
+            status=status,
+            failure_reason=reason,
+            raw_response=response.text,
         )
+        if status != "complete":
+            raise GenerationFailure(generation)
+        return generation

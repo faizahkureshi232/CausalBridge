@@ -12,7 +12,12 @@ from causalbridge.discovery.anm_requests import ANMConfig
 from causalbridge.discovery.contracts import RuntimePair
 from causalbridge.discovery.evidence import select_pair
 from causalbridge.evaluation.export import analysis_rows, evaluator_mapping
-from causalbridge.evaluation.integration import IntegratedRunner, build_native_packages
+from causalbridge.evaluation.integration import (
+    COMPACT_PROTOCOL,
+    PROTOCOL,
+    IntegratedRunner,
+    build_native_packages,
+)
 from causalbridge.llm.client import Generation
 
 
@@ -42,6 +47,7 @@ class ScriptedNativeModel:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--protocol", choices=(PROTOCOL, COMPACT_PROTOCOL), default=PROTOCOL)
     args = parser.parse_args()
     packages = []
     for i in range(3):
@@ -68,6 +74,8 @@ def main():
         model_identity="scripted-native-v1",
         identity_verified=True,
         model_mode="scripted_fixture",
+        observation_kind="synthetic",
+        protocol=args.protocol,
     )
     run = runner.run(packages, ScriptedNativeModel())
     releases = runner.replay_s2(run["manifest_id"])

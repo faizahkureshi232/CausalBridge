@@ -149,15 +149,63 @@ Kris uses stable external condition IDs S0/S1 and freezes instructions/version.
 | DisplayRowClaim | type=display_row, evidence_ref=display_rows, row_index=strict nonnegative integer, values=finite A/B pair |
 | SummaryClaim | type=summary, evidence_ref=summary, statistic=mean/std/minimum/maximum/correlation/n_display, value=finite scalar or numeric pair |
 
-Row/statistic citations must equal the saved values exactly, including scalar/
-vector shape. n_display=2 may be quoted as numeric 2.0. Null method direction is
-valid only as a citation of configured ANM abstention. Error/unconfigured results
+Checker `direction-checker-0.3` uses the numeric evidence policy below for
+continuous row/statistic citations. Scalar/vector shape, A/B order, row indices
+and statistic names remain exact. The discrete count n_display=2 may be quoted
+as numeric 2.0, but fractional count deviations are rejected. Null method direction
+is valid only as a citation of configured ANM abstention. Error/unconfigured results
 cannot support a method_direction claim, including a null one. The model may
 choose the opposite arrow while accurately citing ANM's actual preference.
 
 No confidence/probability/LLM-score fields or unrestricted text claims exist.
 Extra fields or unknown claim types/references are schema errors. The checker
 doesn't interpret reason_code prose or detect information hidden in allowed text.
+
+### Numeric evidence tolerance: checker 0.3
+
+For finite **continuous numeric claim values only**, compare a claimed scalar or
+each element of an A/B pair against the cited saved evidence with
+`math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)`:
+
+`abs(actual - expected) <= max(1e-12 * max(abs(actual), abs(expected)), 1e-12)`.
+
+The criterion is inclusive. Near zero, the absolute tolerance controls; at large
+magnitudes, the relative tolerance controls. Negative values follow the same
+rule. This is deterministic comparison slack for decimal serialization/rounding,
+not measurement uncertainty, statistical significance, or causal evidence.
+
+Tolerance is evaluated only after strict schema/citation validation and exact
+binding of the proposal to its original evidence receipt. A display-row citation
+must have evidence_ref=display_rows and an existing strict integer row_index;
+a summary citation must have evidence_ref=summary and a supplied statistic.
+Only that selected field is compared; the checker does not search other rows or
+statistics for a nearby number. Missing fields/values, wrong shape, wrong A/B
+order, invalid reference types, NaN and infinity are rejected. Nonfinite bypass
+objects may raise ValueError at canonical JSON validation before a check record
+exists; callers must record this as an invalid-input failure, never a release.
+Unbound exact matches still cannot release; unbound approximate matches do not
+receive tolerance. Existing fail/abstain precedence is retained.
+
+Exact equality remains mandatory for evidence/case/mapping identifiers, package/
+proposal/display/method/config/source digests, method settings, counts, seeds,
+row indices, categorical values, directions, reason codes and all nonnumeric
+fields. n_display is a discrete count and does not receive tolerance. Categorical
+ANM direction claims are unchanged. No field is rounded, normalized or rewritten
+before hashing or comparison. A passed check still cannot change the saved arrow.
+
+This addresses smoke-v2 mean -0.18179807460923827 versus -0.1817980746092382
+and row value -0.12044657480477401 versus -0.1204465748047740, differences of
+about 8.3e-17 and 1.4e-17. Material numeric discrepancies remain failures.
+The policy can accept a small nonzero value near zero or larger absolute offsets
+at very large magnitudes; it cannot determine whether a model understood a value.
+Empty-claim releases and qualified ANM disagreement remain permitted. No new
+minimum-citation, directional-agreement, prompt or generation policy is added.
+
+This is an explicit checker/release-policy revision from 0.2, not a change to
+cached S1 predictions. Checker-version cache keys separate deterministic replays.
+Preserve original checks; write updated replay outputs to a separate artifact
+bundle and report versions alongside decisions. Do not pool release outcomes
+from different checker versions without identifying the change.
 
 ### Execution, transport and check output
 
@@ -180,6 +228,27 @@ doesn't interpret reason_code prose or detect information hidden in allowed text
 nonnegative `input_tokens`, `output_tokens` default null; nonnegative
 `latency_seconds` defaults 0. Raw text is preserved, not replaced by normalized JSON.
 
+Live execution additionally preserves `status` (complete/truncated/incomplete;
+default complete for historical records), nullable `failure_reason`, and nullable
+`raw_response` containing the original HTTP response body. A response terminated
+by the output limit is truncated and remains a generation failure even if its text
+is valid JSON. The predictor must not parse it or create a verification context.
+`GenerationFailure` carries the received Generation through durable storage and
+recovery; no-response failures retain generation=null and unknown token usage.
+There are no automatic retries.
+
+The optional `integrated-track-b-v2-compact` protocol uses prompt version
+`direction-0.2-compact`: identical concise output constraints in S0/S1, at most
+three relevant claims and citations only to available evidence. S1 retains its
+additional caution instruction. These are prompt instructions, not a new claim
+count release rule. The directional schema and permitted abstention are unchanged.
+The original v1 protocol and historical prompt version remain selectable.
+Transport provenance (live/scripted) is recorded separately from observation
+provenance (synthetic/real/unspecified); a live synthetic smoke is not a real-data
+evaluation. Empty-claim releases are reported explicitly, without claiming
+checked evidential support or reference correctness.
+
+
 `ModelConfig` (`llm.client`) defaults: model=qwen2.5:3b,
 base_url=http://127.0.0.1:11434, timeout_seconds=120 (>0), temperature=0 ([0,2]),
 seed=261, max_tokens=1024 (>0), context_tokens=8192 (>=1024).
@@ -189,7 +258,8 @@ scientific confidence interpretation and no built-in monetary cost estimate.
 `causalbridge.verifier.checks.PredictionCheck`: required `case_id`,
 `package_digest`, `proposal_digest`, `status` (pass/fail/abstain), strict boolean
 `release`, and nonempty tuple `reason_codes`. `checker_version` defaults to
-direction-checker-0.2; `claim_findings` defaults empty. Each `ClaimFinding`
+direction-checker-0.3; `claim_findings` defaults empty. Historical saved checks
+retain their original version, including direction-checker-0.2. Each `ClaimFinding`
 requires `claim_index` (strict nonnegative integer), `status`
 (pass/fail/abstain), and nonempty `reason_code`. Only pass may release.
 Persist every finding, not just the aggregate status.

@@ -2,7 +2,7 @@
 
 from causalbridge.llm.predictor import PredictionExecution
 
-EXPORT_VERSION = "native-analysis-v1"
+EXPORT_VERSION = "native-analysis-v2"
 
 
 def analysis_rows(run: dict, releases: list[dict]) -> list[dict]:
@@ -25,6 +25,23 @@ def analysis_rows(run: dict, releases: list[dict]) -> list[dict]:
             run_id=trace.run_id if trace else None,
             model_identity=start["model_identity"],
             model_mode=start["model_mode"],
+            observation_kind=start.get("observation_kind", "unspecified"),
+            prediction_binding="valid" if usable else "invalid_or_unavailable",
+            prediction_scorable=usable,
+            generation_status=trace.generation.status
+            if trace and trace.generation
+            else "unavailable",
+            generation_failure_reason=trace.generation.failure_reason
+            if trace and trace.generation
+            else None,
+            supplied_claim_count=len(trace.prediction.claims)
+            if trace and trace.prediction is not None
+            else None,
+            supporting_claims_status="not_checked",
+            checked_claim_count=0,
+            released_direction=None,
+            causal_correctness=None,
+            causal_correctness_status="requires_separate_evaluator_labels",
             protocol=start["protocol"],
             failure_stage=trace.failure_stage if trace else end["operational_error"],
             input_tokens=trace.generation.input_tokens if trace and trace.generation else None,
@@ -78,6 +95,13 @@ def analysis_rows(run: dict, releases: list[dict]) -> list[dict]:
                 outcome=release["skip_reason"] or check["status"],
                 reason_codes=check["reason_codes"] if check else [],
                 checker_version=check["checker_version"] if check else None,
+                released_direction=released,
+                supporting_claims_status="not_checked"
+                if check is None
+                else "no_supporting_claims_supplied"
+                if not trace.prediction.claims
+                else "checked",
+                checked_claim_count=len(check["claim_findings"]) if check else 0,
                 input_tokens=0,
                 output_tokens=0,
             )

@@ -14,12 +14,20 @@ from causalbridge.discovery.schemas import (
     PromptCondition,
     canonical_digest,
 )
-from causalbridge.llm.client import Generation, JSONModel, ModelConfig
+from causalbridge.llm.client import Generation, GenerationFailure, JSONModel, ModelConfig
 from causalbridge.llm.parser import messages, parse_json
 from causalbridge.schemas import Record
 
 QUESTION = "Which direction is more plausible, A → B or B → A? You may abstain."
 PROMPT_VERSION = "direction-0.1"
+
+
+def prompt_version_for(prompt_condition: PromptCondition) -> str:
+    return (
+        "direction-0.2-compact"
+        if prompt_condition.version == "integrated-track-b-v2-compact"
+        else PROMPT_VERSION
+    )
 
 
 class PredictionExecution(Record):
@@ -83,6 +91,8 @@ def predict_direction(
     stage = "generate"
     try:
         generation = model_client.generate(prompt, schema)
+        if generation.status != "complete":
+            raise GenerationFailure(generation)
         stage = "parse"
         prediction = parse_json(generation.text, DirectionPrediction)
         stage = "binding"
@@ -92,9 +102,13 @@ def predict_direction(
         ):
             raise ValueError("Prediction case/package binding mismatch")
         stage = None
+    except GenerationFailure as exc:
+        generation = exc.generation
+        error = f"GenerationFailure: {exc}"
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
     return PredictionExecution(
+        prompt_version=prompt_version_for(prompt_condition),
         evidence=evidence,
         package_digest=evidence.package_digest,
         display_sample_digest=evidence.display_sample_digest,

@@ -1,5 +1,6 @@
 """Deterministic Track B consistency gate; never establishes causal truth."""
 
+import math
 from typing import Literal
 
 from pydantic import Field, StrictBool, ValidationError, model_validator
@@ -15,6 +16,9 @@ from causalbridge.discovery.schemas import (
 from causalbridge.schemas import Record
 from causalbridge.verifier.bindings import VerificationContext
 
+NUMERIC_CLAIM_REL_TOL = 1e-12
+NUMERIC_CLAIM_ABS_TOL = 1e-12
+
 
 class ClaimFinding(Record):
     claim_index: int = Field(strict=True, ge=0)
@@ -26,7 +30,7 @@ class PredictionCheck(Record):
     case_id: str
     package_digest: Digest
     proposal_digest: Digest
-    checker_version: str = "direction-checker-0.2"
+    checker_version: str = "direction-checker-0.3"
     status: Literal["pass", "fail", "abstain"]
     release: StrictBool
     reason_codes: tuple[str, ...] = Field(min_length=1)
@@ -129,8 +133,8 @@ def check_prediction(
     unknowns.extend(method_unknowns)
     findings = []
     for index, claim in enumerate(saved_prediction.claims):
-        status, code = _check_claim(evidence, claim)
         claim_bound = method_bound if isinstance(claim, MethodDirectionClaim) else evidence_bound
+        status, code = _check_claim(evidence, claim, numeric_bound=claim_bound)
         if status == "pass" and not claim_bound:
             # A locally correct citation is not certified against an unbound cache.
             status, code = "abstain", "claim_binding_unverified"
@@ -203,7 +207,35 @@ def _method_bindings(evidence, context):
     return failures, unknowns
 
 
-def _check_claim(evidence, claim):
+def _numeric_claim_equal(actual, expected, *, bound):
+    """Finite scalar/pair comparison; tolerance is enabled only for bound citations.
+
+    Never use for hashes, identities, counts, indices, method settings or categories.
+    Scalar/vector shape and A/B ordering remain exact. No payload is normalized.
+    """
+    if isinstance(actual, tuple) or isinstance(expected, tuple):
+        return (
+            isinstance(actual, tuple)
+            and isinstance(expected, tuple)
+            and len(actual) == len(expected)
+            and all(
+                _numeric_claim_equal(a, b, bound=bound)
+                for a, b in zip(actual, expected, strict=True)
+            )
+        )
+    if type(actual) not in (int, float) or type(expected) not in (int, float):
+        return False
+    if not math.isfinite(actual) or not math.isfinite(expected):
+        return False
+    return actual == expected or (
+        bound
+        and math.isclose(
+            actual, expected, rel_tol=NUMERIC_CLAIM_REL_TOL, abs_tol=NUMERIC_CLAIM_ABS_TOL
+        )
+    )
+
+
+def _check_claim(evidence, claim, *, numeric_bound=False):
     """Small typed vocabulary; no text interpretation or statistical estimation."""
     if isinstance(claim, MethodDirectionClaim):
         method = evidence.method_result
@@ -221,7 +253,9 @@ def _check_claim(evidence, claim):
             return "fail", "rows_unavailable"
         if claim.row_index >= len(evidence.display_rows):
             return "fail", "row_unavailable"
-        if claim.values != evidence.display_rows[claim.row_index]:
+        if not _numeric_claim_equal(
+            claim.values, evidence.display_rows[claim.row_index], bound=numeric_bound
+        ):
             return "fail", "row_value_mismatch"
         return "pass", "row_claim_consistent"
     if evidence.summary is None:
@@ -229,6 +263,12 @@ def _check_claim(evidence, claim):
     expected = getattr(evidence.summary, claim.statistic)
     if expected is None:
         return "fail", "statistic_unavailable"
-    if claim.value != expected:
+    # n_display is a discrete count, not a floating-point measurement.
+    matches = (
+        claim.value == expected
+        if claim.statistic == "n_display"
+        else _numeric_claim_equal(claim.value, expected, bound=numeric_bound)
+    )
+    if not matches:
         return "fail", "summary_value_mismatch"
     return "pass", "summary_claim_consistent"

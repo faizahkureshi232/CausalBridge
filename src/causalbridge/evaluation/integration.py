@@ -28,13 +28,13 @@ from causalbridge.discovery.schemas import (
     canonical_digest,
 )
 from causalbridge.evaluation.store import Journal, atomic_json
-from causalbridge.llm.client import Generation, JSONModel, ModelConfig
+from causalbridge.llm.client import Generation, GenerationFailure, JSONModel, ModelConfig
 from causalbridge.llm.parser import parse_json
 from causalbridge.llm.predictor import (
-    PROMPT_VERSION,
     PredictionExecution,
     direction_messages,
     predict_direction,
+    prompt_version_for,
 )
 from causalbridge.schemas import Record
 from causalbridge.verifier.bindings import ANMRequestBinding, VerificationContext
@@ -52,6 +52,16 @@ def _save(path, value):
 
 
 PROTOCOL = "integrated-track-b-v1"
+COMPACT_PROTOCOL = "integrated-track-b-v2-compact"
+COMPACT_OUTPUT = (
+    "\nKeep the structured response concise. Supply at most three relevant claims; "
+    "never enumerate or copy all displayed rows. Use a short reason_code. "
+    "Cite only evidence present in this package: display_row claims require display_rows, "
+    "summary claims require the cited supplied statistic, and method_direction claims "
+    "require a non-null method_result with an available direction. "
+    "Do not invent values or citations. Use claims=[] when no relevant citations are available. "
+    "Abstention remains allowed: predicted_direction=null, abstained=true, and a short reason."
+)
 NATIVE_BASE = (
     "Assess which direction is more plausible between A and B using the supplied evidence."
 )
@@ -200,13 +210,17 @@ def build_native_packages(
     return tuple(result)
 
 
-def condition(name: str) -> PromptCondition:
+def condition(name: str, protocol: str = PROTOCOL) -> PromptCondition:
     if name not in {"S0", "S1"}:
         raise ValueError("S2 is replay only")
+    if protocol not in {PROTOCOL, COMPACT_PROTOCOL}:
+        raise ValueError("Unknown native protocol")
     return PromptCondition(
         condition_id=name,
-        version=PROTOCOL,
-        instructions=NATIVE_BASE + (NATIVE_CAUTION if name == "S1" else ""),
+        version=protocol,
+        instructions=NATIVE_BASE
+        + (COMPACT_OUTPUT if protocol == COMPACT_PROTOCOL else "")
+        + (NATIVE_CAUTION if name == "S1" else ""),
     )
 
 
@@ -239,9 +253,16 @@ class IntegratedRunner:
         identity_verified=False,
         source_version="unspecified",
         model_mode="live",
+        protocol=PROTOCOL,
+        observation_kind="unspecified",
     ):
-        if model_mode not in {"live", "scripted_fixture"}:
+        if model_mode not in {"live", "live_ollama", "scripted_fixture"}:
             raise ValueError("Explicit model mode must be live or scripted_fixture")
+        if protocol not in {PROTOCOL, COMPACT_PROTOCOL}:
+            raise ValueError("Unknown native protocol")
+        if observation_kind not in {"synthetic", "real_observational", "unspecified"}:
+            raise ValueError("Explicit observation provenance required")
+        self.protocol, self.observation_kind = protocol, observation_kind
         self.mode = model_mode
         if not model_identity:
             raise ValueError("Explicit model identity required")
@@ -269,15 +290,15 @@ class IntegratedRunner:
                 raise ValueError("Duplicate case/package")
             seen.add((e.case_id, e.package))
             for name in ("S0", "S1"):
-                c = condition(name)
+                c = condition(name, self.protocol)
                 identity = dict(
-                    protocol=PROTOCOL,
+                    protocol=self.protocol,
                     package=package.model_dump(mode="json"),
                     receipt=_receipt(package),
                     condition=c.model_dump(mode="json"),
                     messages=direction_messages(e, c),
                     output_schema=DirectionPrediction.model_json_schema(),
-                    prompt_version=PROMPT_VERSION,
+                    prompt_version=prompt_version_for(c),
                     model_identity=self.model_identity,
                     model_mode=self.mode,
                     config=self.config.model_dump(mode="json") if self.config else None,
@@ -287,6 +308,8 @@ class IntegratedRunner:
                     replicate_id=replicate_id,
                     retry_id=retry_id,
                 )
+                if self.observation_kind != "unspecified":
+                    identity["observation_kind"] = self.observation_kind
                 planned.append(identity | {"key": canonical_digest(identity)})
         manifest_id = canonical_digest([p["key"] for p in planned]).removeprefix("sha256:")
         invocation_id = uuid4().hex
@@ -297,7 +320,7 @@ class IntegratedRunner:
                 for k in ("native_started", "native_generated", "native_finished")
             )
             manifest = {
-                "protocol": PROTOCOL,
+                "protocol": self.protocol,
                 "manifest_id": manifest_id,
                 "expected_keys": [p["key"] for p in planned],
             }
@@ -349,9 +372,16 @@ class IntegratedRunner:
                             raise ValueError(
                                 "Actual predictor request differs from scheduled request"
                             )
-                        generation = Generation.model_validate(
-                            model.generate(deepcopy(messages), deepcopy(schema))
-                        )
+                        try:
+                            generation = Generation.model_validate(
+                                model.generate(deepcopy(messages), deepcopy(schema))
+                            )
+                        except GenerationFailure as exc:
+                            store.append(
+                                "native_generated",
+                                dict(key=key, generation=exc.generation.model_dump(mode="json")),
+                            )
+                            raise
                         store.append(
                             "native_generated",
                             dict(key=key, generation=generation.model_dump(mode="json")),
@@ -367,7 +397,7 @@ class IntegratedRunner:
                 self.store.append("native_finished", end)
                 ends[key] = end
             result = dict(
-                protocol=PROTOCOL,
+                protocol=self.protocol,
                 manifest_id=manifest_id,
                 invocation_id=invocation_id,
                 new_model_calls=len(new_keys),
@@ -405,6 +435,9 @@ class IntegratedRunner:
         generation = Generation.model_validate(raw)
         prediction, failure, error = None, "parse", None
         try:
+            if generation.status != "complete":
+                failure = "generate"
+                raise GenerationFailure(generation)
             prediction = parse_json(generation.text, DirectionPrediction)
             failure = "binding"
             if (
@@ -417,6 +450,7 @@ class IntegratedRunner:
             error = f"{type(exc).__name__}: {exc}"
         return PredictionExecution(
             run_id=start["attempt_id"],
+            prompt_version=prompt_version_for(PromptCondition.model_validate(start["condition"])),
             evidence=evidence,
             package_digest=evidence.package_digest,
             display_sample_digest=evidence.display_sample_digest,

@@ -25,6 +25,17 @@ NATIVE_SUFFIX = (
 )
 
 
+COMPACT_OUTPUT = (
+    "\nKeep the structured response concise. Supply at most three relevant claims; "
+    "never enumerate or copy all displayed rows. Use a short reason_code. "
+    "Cite only evidence present in this package: display_row claims require display_rows, "
+    "summary claims require the cited supplied statistic, and method_direction claims "
+    "require a non-null method_result with an available direction. "
+    "Do not invent values or citations. Use claims=[] when no relevant citations are available. "
+    "Abstention remains allowed: predicted_direction=null, abstained=true, and a short reason."
+)
+
+
 def _native_hash(value):
     return (
         "sha256:"
@@ -88,7 +99,26 @@ def audit_native(root):
                 key,
             )
             name = start["condition"]["condition_id"]
-            expected_system = NATIVE_BASE + (CAUTION if name == "S1" else "") + NATIVE_SUFFIX
+            protocol = start["protocol"]
+            check(
+                protocol in {"integrated-track-b-v1", "integrated-track-b-v2-compact"},
+                "protocol_policy",
+                key,
+            )
+            compact = protocol == "integrated-track-b-v2-compact"
+            expected_system = (
+                NATIVE_BASE
+                + (COMPACT_OUTPUT if compact else "")
+                + (CAUTION if name == "S1" else "")
+                + NATIVE_SUFFIX
+            )
+            check(start["condition"]["version"] == protocol, "condition_version", key)
+            check(
+                start["prompt_version"]
+                == ("direction-0.2-compact" if compact else "direction-0.1"),
+                "prompt_version",
+                key,
+            )
             check(
                 name in {"S0", "S1"} and start["messages"][0]["content"] == expected_system,
                 "prompt_policy",
@@ -176,6 +206,48 @@ def audit_native(root):
                 check(
                     trace["failure_stage"] == "generate" and trace["generation"] is None,
                     "missing_generation",
+                    key,
+                )
+            generation = trace["generation"]
+            http_incomplete = False
+            if generation and generation.get("raw_response") is not None:
+                body = _json(generation["raw_response"])
+                content = body.get("message", {}).get("content")
+                check(
+                    generation["text"] == (content if isinstance(content, str) else "")
+                    and generation["input_tokens"] == body.get("prompt_eval_count")
+                    and generation["output_tokens"] == body.get("eval_count")
+                    and generation["model"]
+                    == body.get("model", (start.get("config") or {}).get("model")),
+                    "http_generation_binding",
+                    key,
+                )
+                # Derive every HTTP completion state independently of the stored status.
+                expected_status, expected_reason = "complete", None
+                if body.get("done_reason") == "length":
+                    expected_status, expected_reason = "truncated", "output_token_limit"
+                elif body.get("done") is not True:
+                    expected_status, expected_reason = "incomplete", "response_not_done"
+                elif not isinstance(content, str) or not content.strip():
+                    expected_status, expected_reason = "incomplete", "missing_text_content"
+                http_incomplete = expected_status != "complete"
+                check(
+                    generation.get("status") == expected_status
+                    and generation.get("failure_reason") == expected_reason,
+                    "http_truncation_status"
+                    if expected_status == "truncated"
+                    else "http_completion_status",
+                    key,
+                )
+            if generation and (
+                http_incomplete or generation.get("status", "complete") != "complete"
+            ):
+                check(
+                    trace["failure_stage"] == "generate"
+                    and trace["prediction"] is None
+                    and end["context"] is None
+                    and bool(generation.get("failure_reason")),
+                    "incomplete_generation_not_scorable",
                     key,
                 )
             if trace["failure_stage"] is None:
@@ -271,6 +343,26 @@ def audit_native(root):
                 "call_accounting",
                 invocation["invocation_id"],
             )
+            manifest = _json(
+                (root / "manifests" / (invocation["manifest_id"] + ".json")).read_text()
+            )
+            for field in ("input_tokens", "output_tokens"):
+                for group, usage_keys in (
+                    ("new_usage", new),
+                    ("historical_usage", set(manifest["expected_keys"]) - new),
+                ):
+                    values = [
+                        ends[k]["execution"]["generation"][field]
+                        if ends[k]["execution"] and ends[k]["execution"]["generation"]
+                        else None
+                        for k in usage_keys
+                    ]
+                    expected = sum(values) if all(v is not None for v in values) else None
+                    check(
+                        invocation[group][field] == expected,
+                        "usage_accounting",
+                        invocation["invocation_id"],
+                    )
         for path in manifests:
             m = _json(path.read_text())
             grouped = {}
@@ -309,7 +401,11 @@ def audit_native(root):
     except (ValueError, KeyError, TypeError, OSError, IndexError, AttributeError) as exc:
         findings.append({"code": "unreadable_or_invalid_artifact", "detail": type(exc).__name__})
     return dict(
-        audit_version="native-handshake-audit-v1",
+        audit_version="native-handshake-audit-v2",
+        model_modes=sorted({s["model_mode"] for s in maps["native_started"].values()}),
+        observation_kinds=sorted(
+            {s.get("observation_kind", "unspecified") for s in maps["native_started"].values()}
+        ),
         auditor_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         input_files_sha256={
             str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -320,7 +416,8 @@ def audit_native(root):
         findings=findings,
         counts={k: len(v) for k, v in maps.items()},
         limitations=[
-            "Synthetic observations and scripted model transport; no accuracy claim.",
+            "Transport mode and observation provenance are separate; "
+            "legacy undeclared provenance stays unspecified.",
             "Checks durable method request/result binding, not statistical validity.",
             "Real source-family eligibility and scorer consumption are pending.",
         ],

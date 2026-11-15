@@ -17,7 +17,7 @@ def test_valid_packages_release_saved_answer(bound_direction, index):
     result = check_prediction(e, p, context=context)
     assert result.status == "pass" and result.release
     assert result.reason_codes == ("evidence_consistent",)
-    assert result.checker_version == "direction-checker-0.2"
+    assert result.checker_version == "direction-checker-0.3"
     assert result.proposal_digest == p.proposal_digest
 
 
@@ -331,7 +331,12 @@ def test_saved_phase_two_examples_reproduce_exact_checks():
         p = DirectionPrediction.model_validate(record["saved_prediction"])
         context = VerificationContext.model_validate(record["context"])
         expected = PredictionCheck.model_validate(record["check"])
-        assert check_prediction(e, p, context=context) == expected
+        actual = check_prediction(e, p, context=context)
+        # Historical fixtures retain their original checker identity and decisions.
+        assert actual.model_dump(exclude={"checker_version"}) == expected.model_dump(
+            exclude={"checker_version"}
+        )
+        assert actual.checker_version == "direction-checker-0.3"
 
 
 @pytest.mark.parametrize(

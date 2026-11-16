@@ -20,7 +20,7 @@ from causalbridge.schemas import Record
 class PairReview(Record):
     pair_id: int = Field(strict=True, ge=1)
     source_group: str = Field(min_length=1)
-    split: Literal["pilot", "reserved"]
+    split: Literal["pilot", "development", "test", "ineligible", "reserved"]
     variables: tuple[Variable, Variable] | None = None
     exclusion_reason: str | None = Field(default=None, min_length=1)
     notes: tuple[str, ...] = ()
@@ -73,11 +73,21 @@ def prepare_pilot(snapshot: Path, manifest: dict) -> PreparedPilot:
     reviews = {r.pair_id: r for r in spec.pairs}
     if len(reviews) != len(spec.pairs) or set(reviews) != set(metadata):
         raise ValueError("Review must account for every metadata pair exactly once")
-    groups = {}
+    grouped: dict[str, list[PairReview]] = {}
     for review in spec.pairs:
-        previous = groups.setdefault(review.source_group, review.split)
-        if previous != review.split:
-            raise ValueError("Source group overlaps pilot and reserved data")
+        grouped.setdefault(review.source_group, []).append(review)
+    for group, members in grouped.items():
+        splits = {member.split for member in members}
+        if len(splits) != 1:
+            raise ValueError("Source group has more than one split: " + group)
+        split = next(iter(splits))
+        eligible = [member for member in members if member.exclusion_reason is None]
+        if split == "pilot" and not eligible:
+            raise ValueError("Pilot source group has no included pair: " + group)
+        if split in {"development", "test"} and not eligible:
+            raise ValueError("Held-out source group has no eligible pair: " + group)
+        if split in {"ineligible", "reserved"} and eligible:
+            raise ValueError("Excluded source group contains an eligible pair: " + group)
     # Opaque IDs are randomized independently of reference labels, before reading them.
     ids = list(range(1000, 1000 + len(reviews)))
     random.Random(spec.mapping_seed).shuffle(ids)
@@ -85,13 +95,13 @@ def prepare_pilot(snapshot: Path, manifest: dict) -> PreparedPilot:
     pairs, evaluator, excluded = [], [], []
     for pair_id, review in sorted(reviews.items()):
         a, b, c, d, weight = metadata[pair_id]
-        if review.split == "reserved" or review.exclusion_reason:
+        if review.split != "pilot" or review.exclusion_reason:
             excluded.append(
                 dict(
                     pair_id=pair_id,
                     source_group=review.source_group,
                     split=review.split,
-                    reason=review.exclusion_reason or "not_selected_for_pilot",
+                    reason=review.exclusion_reason,
                 )
             )
             continue

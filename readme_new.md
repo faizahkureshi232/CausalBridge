@@ -170,18 +170,18 @@ source family. Do not add a bootstrap interval yet. The scorer's scope is
 source-group resamples wait until the protocol is frozen. Resample families,
 not pairs and not packages, and use the same draw for every condition.
 
-### 6. Only then freeze and hold out
+### 6. Freeze, then run the held-out groups
 
-After the case table says whether the obstacle is ANM, the model copying ANM,
-the checker, or this sample:
+The eligibility audit and the source-group split are recorded in
+[docs/data_audit.md](docs/data_audit.md). Development groups are census income,
+MOPEX catchments, and NL schools. The 17 pilot pairs were not changed. Unused
+UNdata and Auto MPG pairs stay in the pilot family.
 
-- Audit the 79 reserved pairs. Record an exclusion reason. Do not drop rows
-  quietly or impute.
-- Split whole source groups into development and test. A group used in the
-  pilot, including unused UNdata and Auto MPG siblings, stays out of test.
 - Freeze eligibility, weights, prompts, model digest, sample sizes, the ANM
-  threshold, checker rules, metric definitions, and the bootstrap settings.
-- Run held-out groups with no retuning.
+  threshold, checker rules, metric definitions, and the bootstrap settings
+  before any held-out execution.
+- Fit a later ANM threshold on the development groups only.
+- Run the test groups with no retuning.
 - Put correct, wrong, and no-release side by side. Keep the negative E4 result
   if it still holds: the model did not beat ANM, and the checker did not change
   those releases.

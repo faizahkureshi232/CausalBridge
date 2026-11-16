@@ -24,9 +24,10 @@ predictions remain unchanged; these are exploratory pilot findings.
   `configs/pilot-data.json`. Download location and verified format: [source notes](api/tuebingen.md).
 - 17 selected scalar pairs from seven reviewed source families: DWD weather,
   Auto MPG, Arrhythmia, GAG urine, UNdata, apartment rentals and bone measurements.
-- 91 other entries explicitly excluded/reserved. All UNdata and Auto MPG entries
-  belong to the pilot partition, including unselected related pairs. Reserved
-  pairs have not had eligibility audited; this is not a final train/test split.
+- The other 91 entries stay out of this pilot. Twelve are locked to the pilot
+  families, including every unused UNdata and Auto MPG pair. Eligible remaining
+  source groups are assigned to development or test in
+  [the data audit](data_audit.md). Ineligible groups have a recorded reason.
 - Separate runtime/evaluator files, deterministic A/B orientation and samples,
   native runner/auditor, method-only/simple-gate baselines and weighted pilot scores.
 - Pilot-affecting context isolation, ANM export, Track A truncation/usage and schema
@@ -161,7 +162,7 @@ Checker 0.3 permits zero claims and qualified disagreement with ANM; a passing
 process check is not a correctness certificate. Inspect all pilot outputs for
 missing support and unsupported causal language, including free text in reason codes.
 
-Deferred: final held-out eligibility/splits and protocol freeze; paired source-group
+Deferred: protocol freeze and the held-out run itself; paired source-group
 bootstrap intervals and inferential plots; full error-study/report/presentation;
 optional robustness experiments and a new minimum-citation policy. None is needed
 to execute and inspect this bounded pilot. The original preparation used scripted

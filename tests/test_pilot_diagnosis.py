@@ -217,9 +217,7 @@ def test_anm_file_direction_must_match_the_export():
         diagnose_pilot(rows, evaluator, mappings, anm)
 
 
-@pytest.mark.parametrize(
-    "fault", ["flipped_margin", "arrow_kept", "wrong_mapping", "wrong_config"]
-)
+@pytest.mark.parametrize("fault", ["flipped_margin", "arrow_kept", "wrong_mapping", "wrong_config"])
 def test_corrupt_anm_results_do_not_change_the_curve(fault):
     rows, evaluator, mappings, anm = cohort()
     result = anm["D1001"]

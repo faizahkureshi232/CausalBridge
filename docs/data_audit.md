@@ -5,6 +5,10 @@ The local files match all 218 recorded SHA-256 hashes. Raw files stay in ignored
 `runs/pilot-preparation/raw/`. This audit does not change the 17 pairs already
 used in `runs/real-pilot-01/`.
 
+Check mode and `--write` both hash every pinned file before reading pair values.
+A changed numeric file with its old hash, a missing file, a duplicate metadata id,
+or a nonfinite or negative weight is rejected.
+
 Reproduce the check when the snapshot is present:
 
 ```bash

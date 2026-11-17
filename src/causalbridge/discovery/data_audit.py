@@ -11,6 +11,8 @@ import math
 import random
 from pathlib import Path
 
+from causalbridge.discovery.loader import read_pair_metadata, verify_snapshot_hashes
+
 PILOT_PAIR_IDS = frozenset({1, 2, 3, 4, 13, 14, 15, 16, 18, 20, 21, 22, 23, 24, 56, 86, 88})
 # Descriptions state a time index, a successive-day lag, a repeated measure of
 # the same units, or an explicit time series. Pair 24 and 86 match loose words
@@ -103,8 +105,9 @@ def data_exclusion(pair_id, columns, weight, stats, minimum_rows) -> str | None:
 def assign_reviews(manifest: dict, snapshot: Path) -> list[dict]:
     """Return pair reviews with audited exclusions and source-group splits."""
     snapshot = Path(snapshot)
+    verify_snapshot_hashes(snapshot, manifest["files"])
     reviews = {pair["pair_id"]: pair for pair in manifest["pairs"]}
-    metadata = _metadata(snapshot / "pairmeta.txt")
+    metadata = read_pair_metadata(snapshot / "pairmeta.txt")
     if set(metadata) != set(reviews):
         raise ValueError("Metadata pair ids differ from the manifest")
     minimum_rows = manifest["minimum_rows"]
@@ -170,20 +173,6 @@ def _development_groups(groups: list[str], seed: int) -> set[str]:
     if count >= len(order):
         count = len(order) - 1
     return set(order[:count])
-
-
-def _metadata(path: Path) -> dict[int, tuple[int, int, int, int, float]]:
-    records = {}
-    for line in path.read_text().splitlines():
-        if not line.strip():
-            continue
-        fields = line.split()
-        if len(fields) != 6:
-            raise ValueError("Metadata requires six fields")
-        pair_id, first_start, first_end, second_start, second_end = map(int, fields[:5])
-        weight = float(fields[5])
-        records[pair_id] = (first_start, first_end, second_start, second_end, weight)
-    return records
 
 
 def check_manifest(manifest: dict, snapshot: Path) -> None:

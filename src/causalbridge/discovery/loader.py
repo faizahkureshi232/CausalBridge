@@ -17,6 +17,42 @@ from causalbridge.discovery.evidence import digest
 from causalbridge.schemas import Record
 
 
+def verify_snapshot_hashes(snapshot: Path, files: dict[str, str]) -> None:
+    """Reject a missing or rewritten file before any pair value is interpreted."""
+    if not isinstance(files, dict) or not files:
+        raise ValueError("Manifest has no snapshot hashes")
+    if not {"README", "pairmeta.txt"} <= files.keys():
+        raise ValueError("Snapshot must pin README and metadata")
+    snapshot = Path(snapshot)
+    for name, expected in files.items():
+        if Path(name).name != name or name in {".", ".."}:
+            raise ValueError("Snapshot file names must be local basenames")
+        path = snapshot / name
+        if not path.is_file():
+            raise ValueError("Snapshot file missing: " + name)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError("Snapshot hash mismatch: " + name)
+
+
+def read_pair_metadata(path: Path) -> dict[int, tuple[int, int, int, int, float]]:
+    """Read pairmeta.txt. Duplicate ids and nonfinite or negative weights fail."""
+    metadata: dict[int, tuple[int, int, int, int, float]] = {}
+    for line in Path(path).read_text().splitlines():
+        if not line.strip():
+            continue
+        fields = line.split()
+        if len(fields) != 6:
+            raise ValueError("Metadata requires six fields")
+        pair_id, first_start, first_end, second_start, second_end = map(int, fields[:5])
+        weight = float(fields[5])
+        if pair_id in metadata or not math.isfinite(weight) or weight < 0:
+            raise ValueError("Duplicate pair or invalid metadata weight")
+        metadata[pair_id] = (first_start, first_end, second_start, second_end, weight)
+    if not metadata:
+        raise ValueError("Metadata is empty")
+    return metadata
+
+
 class PairReview(Record):
     pair_id: int = Field(strict=True, ge=1)
     source_group: str = Field(min_length=1)
@@ -51,25 +87,8 @@ def prepare_pilot(snapshot: Path, manifest: dict) -> PreparedPilot:
     """
     spec = PilotManifest.model_validate(manifest)
     snapshot = Path(snapshot).resolve()
-    for name, expected in spec.files.items():
-        if Path(name).name != name or name in {".", ".."}:
-            raise ValueError("Snapshot file names must be local basenames")
-        if hashlib.sha256((snapshot / name).read_bytes()).hexdigest() != expected:
-            raise ValueError("Snapshot hash mismatch: " + name)
-    if not {"README", "pairmeta.txt"} <= spec.files.keys():
-        raise ValueError("Snapshot must pin README and metadata")
-    metadata = {}
-    for line in (snapshot / "pairmeta.txt").read_text().splitlines():
-        if not line.strip():
-            continue
-        fields = line.split()
-        if len(fields) != 6:
-            raise ValueError("Metadata requires six fields")
-        pair_id, a, b, c, d = map(int, fields[:5])
-        weight = float(fields[5])
-        if pair_id in metadata or not math.isfinite(weight) or weight < 0:
-            raise ValueError("Duplicate pair or invalid metadata weight")
-        metadata[pair_id] = (a, b, c, d, weight)
+    verify_snapshot_hashes(snapshot, spec.files)
+    metadata = read_pair_metadata(snapshot / "pairmeta.txt")
     reviews = {r.pair_id: r for r in spec.pairs}
     if len(reviews) != len(spec.pairs) or set(reviews) != set(metadata):
         raise ValueError("Review must account for every metadata pair exactly once")

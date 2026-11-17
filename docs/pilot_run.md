@@ -135,7 +135,8 @@ accuracy alone is not evidence that checking helps.
 
 Do this before another live run. It joins the same files, adds the unweighted
 rates, the E1–E4 contrasts, checker removals, source groups and a margin curve.
-It does not call the model or choose a new threshold.
+A saved ANM result is used only when its scores, margin, direction, mapping and
+original request agree. It does not call the model or choose a new threshold.
 
 ```bash
 uv run --extra anm python -m causalbridge.evaluation.diagnosis \

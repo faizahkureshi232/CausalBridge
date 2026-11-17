@@ -9,6 +9,9 @@ import json
 import math
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from causalbridge.discovery.schemas import ANMResult
 from causalbridge.evaluation.scoring import PILOT_CONDITIONS, score_pilot
 
 MODEL_CONDITIONS = ("S0", "S1", "S2")
@@ -77,6 +80,7 @@ def _bind(evaluator, mappings):
             "original_pair_id": row.get("original_pair_id"),
             "source_group": row["source_group"],
             "weight": row["weight"],
+            "ab_mapping_id": mapping[case]["ab_mapping_id"],
             "reference_direction": "A_to_B" if order[0] == cause else "B_to_A",
         }
     return bound
@@ -102,25 +106,36 @@ def _anm_by_case(anm_results, bound, indexed):
         raise ValueError("ANM results must match the evaluator cases")
     parsed = {}
     for case, result in anm_results.items():
-        exported = indexed[(case, "E4", "ANM_ONLY")]["predicted_direction"]
-        if result.get("predicted_direction") != exported:
+        saved = _validated_anm(case, result, bound[case]["ab_mapping_id"])
+        exported = indexed[(case, "E4", "ANM_ONLY")]
+        if saved.predicted_direction != exported["predicted_direction"]:
             raise ValueError("Saved ANM direction disagrees with the ANM_ONLY export")
-        margin = result.get("margin")
-        if result.get("status") == "ok" and margin is None:
-            raise ValueError("Successful ANM result is missing its margin")
+        if saved.provenance.config_digest != exported.get("method_config_digest"):
+            raise ValueError("ANM result is not bound to the saved configuration")
         parsed[case] = {
-            "margin": margin,
-            "score_ab": result.get("score_ab"),
-            "score_ba": result.get("score_ba"),
-            "threshold": result.get("threshold"),
+            "margin": saved.margin,
+            "score_ab": saved.score_ab,
+            "score_ba": saved.score_ba,
+            "threshold": saved.threshold,
         }
     return parsed
+
+
+def _validated_anm(case, result, mapping_id) -> ANMResult:
+    """Reject a margin, direction, or request binding that the saved scores do not support."""
+    try:
+        saved = ANMResult.model_validate(result)
+    except ValidationError as exc:
+        raise ValueError(f"Saved ANM result for {case} is inconsistent") from exc
+    if saved.provenance.ab_mapping_id != mapping_id:
+        raise ValueError("ANM result is not bound to the saved A/B mapping")
+    return saved
 
 
 def _case_row(case, bound, indexed, anm):
     meta = bound[case]
     reference = meta["reference_direction"]
-    record = dict(meta)
+    record = {key: value for key, value in meta.items() if key != "ab_mapping_id"}
     record.update(anm[case])
     record["anm_direction"] = indexed[(case, "E4", "ANM_ONLY")]["predicted_direction"]
     record["anm_correct"] = _correct(record["anm_direction"], reference)
@@ -323,13 +338,25 @@ def _threshold_curve(cases, thresholds=(0.0, 0.001, 0.01, 0.1)):
 
 
 def load_anm_results(root: Path):
-    """Read result.json files stored as <root>/<case_id>/result.json."""
+    """Read completed ANM directories and verify each original request before use."""
     results = {}
-    for path in sorted(Path(root).iterdir()):
-        result = path / "result.json"
-        if not result.is_file():
+    root = Path(root)
+    if not root.is_dir():
+        raise ValueError("ANM root is not a directory")
+    for path in sorted(item for item in root.iterdir() if item.is_dir()):
+        if not (path / "result.json").is_file():
             continue
-        results[path.name] = json.loads(result.read_text())
+        if not (path / "request.json").is_file():
+            raise ValueError("ANM result is missing its original request: " + path.name)
+        from causalbridge.discovery.anm import load_anm_artifacts
+
+        artifacts = load_anm_artifacts(path)
+        if artifacts.request.case_id != path.name:
+            raise ValueError("ANM request case does not match its directory")
+        saved = _validated_anm(
+            path.name, artifacts.result.model_dump(mode="json"), artifacts.request.ab_mapping_id
+        )
+        results[path.name] = saved.model_dump(mode="json")
     if not results:
         raise ValueError("ANM root contains no result.json files")
     return results

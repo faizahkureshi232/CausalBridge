@@ -35,7 +35,7 @@ The subsequent live real-data pilot is recorded in the update above and pilot gu
 
 ## Deferred work
 
-- Development-calibrated ANM threshold and final held-out protocol freeze.
+- Development-calibrated ANM threshold. The case split, truth, scorability, metrics, and pass rules are frozen in [the evaluation handoff](../evaluation_handoff.md). The threshold itself is not calibrated, and the held-out pairs have not been run.
 - Source-group paired bootstrap intervals and inferential comparisons.
 - Eligibility reasons and the development/test source-group assignment are recorded. The held-out pairs have not been run.
 - Full research error analysis, publication figures, report and presentation.

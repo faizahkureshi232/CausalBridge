@@ -147,6 +147,13 @@ uv run --extra anm python -m causalbridge.evaluation.diagnosis \
   --output runs/real-pilot-01/diagnosis.json
 ```
 
+## Frozen evaluation handoff
+
+Before another ANM change, use [the evaluation handoff](evaluation_handoff.md).
+`configs/evaluation-roster.json` separates the 4 development pairs, the 38
+validation pairs, and the frozen 17. The live directory `runs/real-pilot-01/`
+is not in this checkout.
+
 ## Pilot limitations and deferred work
 
 Threshold 0.001 is an exploratory pilot setting, not a calibrated causal cutoff.
